@@ -28,10 +28,7 @@ var connectionString =
 
 builder.Services.AddDbContextFactory<AppDbContext>(options =>
 {
-    options.UseNpgsql(connectionString, npgsql =>
-    {
-        npgsql.EnableRetryOnFailure(maxRetryCount: 5);
-    });
+    options.UseNpgsql(connectionString);
 });
 
 var cbrEndpoint =
