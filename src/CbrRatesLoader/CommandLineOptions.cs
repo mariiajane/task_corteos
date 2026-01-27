@@ -1,73 +1,28 @@
-using System.Globalization;
-
 namespace CbrRatesLoader;
 
 public sealed record CommandLineOptions(
-    bool Daemon,
-    DateOnly? From,
-    DateOnly? To,
-    int BackfillDays,
-    TimeOnly RunAtLocalTime,
+    bool Daemon, 
+    int BackfillDays, 
     string TimeZoneId)
 {
     public static CommandLineOptions Parse(string[] args)
     {
-        // Минимальный парсер без сторонних зависимостей.
-        // Поддерживаемые аргументы:
-        // --daemon / --once
-        // --from=yyyy-MM-dd
-        // --to=yyyy-MM-dd
-        // --backfillDays=30
-        // --runAt=HH:mm
-        // --tz=Europe/Moscow (Linux) или Russian Standard Time (Windows)
-
+        // Проверяем флаг --daemon
         var daemon = args.Any(a => string.Equals(a, "--daemon", StringComparison.OrdinalIgnoreCase));
-        if (args.Any(a => string.Equals(a, "--once", StringComparison.OrdinalIgnoreCase)))
-        {
-            daemon = false;
-        }
 
-        var from = TryGetDate(args, "--from");
-        var to = TryGetDate(args, "--to");
+        // Получаем кол-во дней для начальной загрузки (по умолчанию 30)
+        var backfillDays = TryGetInt(args, "--days") ?? 30;
 
-        var backfillDays = TryGetInt(args, "--backfillDays") ?? 30;
-        var runAt = TryGetTime(args, "--runAt") ?? new TimeOnly(2, 0);
+        // Таймзона (Europe/Moscow для Linux/Docker или Russian Standard Time для Windows)
         var tz = TryGetString(args, "--tz") ?? "Europe/Moscow";
 
-        return new CommandLineOptions(
-            Daemon: daemon,
-            From: from,
-            To: to,
-            BackfillDays: backfillDays,
-            RunAtLocalTime: runAt,
-            TimeZoneId: tz);
-    }
-
-    private static DateOnly? TryGetDate(string[] args, string key)
-    {
-        var raw = TryGetString(args, key);
-        if (raw is null) return null;
-
-        return DateOnly.TryParseExact(raw, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var date)
-            ? date
-            : null;
-    }
-
-    private static TimeOnly? TryGetTime(string[] args, string key)
-    {
-        var raw = TryGetString(args, key);
-        if (raw is null) return null;
-
-        return TimeOnly.TryParseExact(raw, "HH:mm", CultureInfo.InvariantCulture, DateTimeStyles.None, out var t)
-            ? t
-            : null;
+        return new CommandLineOptions(daemon, backfillDays, tz);
     }
 
     private static int? TryGetInt(string[] args, string key)
     {
         var raw = TryGetString(args, key);
-        if (raw is null) return null;
-        return int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var i) ? i : null;
+        return int.TryParse(raw, out var result) ? result : null;
     }
 
     private static string? TryGetString(string[] args, string key)
@@ -77,4 +32,3 @@ public sealed record CommandLineOptions(
         return match is null ? null : match[prefix.Length..].Trim();
     }
 }
-
