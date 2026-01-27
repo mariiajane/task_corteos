@@ -25,87 +25,79 @@ public sealed class AppRunner
     {
         _logger.LogInformation("Старт. Режим: {Mode}.", _cli.Daemon ? "daemon" : "once");
 
+        // 1. Готовим базу (миграции)
         await _db.MigrateWithRetryAsync(ct);
 
+        // 2. Первичная загрузка (за последние 30 дней)
         var tz = ResolveTimeZone(_cli.TimeZoneId);
-        var todayLocal = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(DateTime.UtcNow, tz).Date);
+        var today = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(DateTime.UtcNow, tz));
+        var from = today.AddDays(-_cli.BackfillDays);
 
-        var from = _cli.From ?? todayLocal.AddDays(-(Math.Max(1, _cli.BackfillDays) - 1));
-        var to = _cli.To ?? todayLocal;
-
-        if (from > to)
-        {
-            (from, to) = (to, from);
-        }
-
-        _logger.LogInformation("Загрузка диапазона: {From} .. {To} (TZ: {Tz}).", from, to, tz.Id);
-        await _importer.ImportRangeAsync(from, to, skipIfDayAlreadyHasAnyRates: false, ct);
+        _logger.LogInformation("Первичная загрузка за период: {From} .. {To}", from, today);
+        // Используем skipIfDayAlreadyHasAnyRates: true, чтобы не перекачивать то, что уже есть
+        await _importer.ImportRangeAsync(from, today, skipIfDayAlreadyHasAnyRates: true, ct);
 
         if (!_cli.Daemon)
         {
-            _logger.LogInformation("Готово. Завершение.");
+            _logger.LogInformation("Работа завершена (режим --once).");
             return;
         }
 
-        _logger.LogInformation("Переход в режим ежедневного запуска в {RunAt} ({Tz}).",
-            _cli.RunAtLocalTime, tz.Id);
+        // 3. Режим демона: спим до 15:05 каждого дня
+        _logger.LogInformation("Режим фоновой службы активен. Ожидание обновлений в 15:05 ({Tz}).", tz.Id);
 
         while (!ct.IsCancellationRequested)
         {
-            var nowLocal = TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, tz);
-
-            var nextRunDateTimeLocal = nowLocal.Date + _cli.RunAtLocalTime.ToTimeSpan();
-            var nextRunLocal = new DateTimeOffset(nextRunDateTimeLocal, tz.GetUtcOffset(nextRunDateTimeLocal));
-            if (nowLocal >= nextRunLocal)
+            var now = TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, tz);
+            
+            // Целевое время запуска: сегодня в 15:05
+            var nextRun = now.Date.AddHours(15).AddMinutes(5);
+            
+            // Если 15:05 уже наступило или прошло, планируем на завтра
+            if (now >= nextRun)
             {
-                nextRunDateTimeLocal = nextRunDateTimeLocal.AddDays(1);
-                nextRunLocal = new DateTimeOffset(nextRunDateTimeLocal, tz.GetUtcOffset(nextRunDateTimeLocal));
+                nextRun = nextRun.AddDays(1);
             }
 
-            var delay = nextRunLocal - nowLocal;
-            if (delay < TimeSpan.Zero) delay = TimeSpan.Zero;
+            var delay = nextRun - now;
+            _logger.LogInformation("Следующее обновление запланировано на {NextRun} (через {Delay}).", nextRun, delay);
 
-            _logger.LogInformation("Следующий запуск: {NextRunLocal} (через {Delay}).", nextRunLocal, delay);
-            await Task.Delay(delay, ct);
+            try 
+            {
+                await Task.Delay(delay, ct);
+            }
+            catch (OperationCanceledException) 
+            {
+                break; // Выход при остановке приложения
+            }
 
-            var runDateLocal = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(DateTime.UtcNow, tz).Date);
-            _logger.LogInformation("Ежедневная выгрузка за {Date}.", runDateLocal);
-            await _importer.ImportDayAsync(runDateLocal, skipIfDayAlreadyHasAnyRates: false, ct);
+            // После пробуждения скачиваем данные за текущую дату в зоне TZ
+            var runDate = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(DateTime.UtcNow, tz));
+            _logger.LogInformation("Запуск ежедневного импорта за {Date}.", runDate);
+            
+            try
+            {
+                await _importer.ImportDayAsync(runDate, skipIfDayAlreadyHasAnyRates: false, ct);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Ошибка во время ежедневного импорта. Попробуем снова через сутки.");
+            }
         }
     }
 
     private static TimeZoneInfo ResolveTimeZone(string id)
     {
-        // На Linux чаще "Europe/Moscow", на Windows — "Russian Standard Time".
-        if (TryFind(id, out var tz)) return tz;
-
-        var fallbacks = id switch
-        {
-            "Europe/Moscow" => new[] { "Russian Standard Time" },
-            "Russian Standard Time" => new[] { "Europe/Moscow" },
-            _ => new[] { "Europe/Moscow", "Russian Standard Time", "UTC" }
-        };
-
-        foreach (var fb in fallbacks)
-        {
-            if (TryFind(fb, out tz)) return tz;
+        try 
+        { 
+            return TimeZoneInfo.FindSystemTimeZoneById(id); 
         }
-
-        return TimeZoneInfo.Utc;
-    }
-
-    private static bool TryFind(string id, out TimeZoneInfo tz)
-    {
-        try
-        {
-            tz = TimeZoneInfo.FindSystemTimeZoneById(id);
-            return true;
-        }
-        catch
-        {
-            tz = null!;
-            return false;
+        catch 
+        { 
+            // Кроссплатформенный fallback: если Linux не знает Windows-таймзону и наоборот
+            return id == "Europe/Moscow" || id == "Russian Standard Time"
+                ? TimeZoneInfo.FindSystemTimeZoneById(OperatingSystem.IsWindows() ? "Russian Standard Time" : "Europe/Moscow")
+                : TimeZoneInfo.Utc;
         }
     }
 }
-
