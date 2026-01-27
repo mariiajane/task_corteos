@@ -26,7 +26,7 @@ services:
       POSTGRES_CONNECTION_STRING: Host=postgres;Port=5432;Database=cbr_rates;Username=postgres;Password=postgres
       CBR__Endpoint: https://www.cbr.ru/DailyInfoWebServ/DailyInfo.asmx
       TZ: Europe/Moscow
-    command: ["--daemon", "--backfillDays=30", "--runAt=02:00", "--tz=Europe/Moscow"]
+    command: ["--daemon", "--days=30", "--tz=Europe/Moscow"]
     restart: unless-stopped
 
 volumes:
