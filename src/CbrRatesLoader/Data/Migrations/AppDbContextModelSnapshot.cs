@@ -1,0 +1,111 @@
+﻿using System;
+using CbrRatesLoader.Data;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
+using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
+
+#nullable disable
+
+namespace CbrRatesLoader.Data.Migrations
+{
+    [DbContext(typeof(AppDbContext))]
+    partial class AppDbContextModelSnapshot : ModelSnapshot
+    {
+        protected override void BuildModel(ModelBuilder modelBuilder)
+        {
+#pragma warning disable 612, 618
+            modelBuilder
+                .HasAnnotation("ProductVersion", "8.0.8")
+                .HasAnnotation("Relational:MaxIdentifierLength", 63);
+
+            NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
+
+            modelBuilder.Entity("CbrRatesLoader.Data.Entities.Currency", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<int>("CbrCode")
+                        .HasColumnType("integer")
+                        .HasColumnName("cbr_code");
+
+                    b.Property<string>("CharCode")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)")
+                        .HasColumnName("char_code");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("name");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CharCode")
+                        .IsUnique();
+
+                    b.ToTable("currency", (string)null);
+                });
+
+            modelBuilder.Entity("CbrRatesLoader.Data.Entities.CurrencyRate", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("CurrencyId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("currency_id");
+
+                    b.Property<DateOnly>("Date")
+                        .HasColumnType("date")
+                        .HasColumnName("date");
+
+                    b.Property<DateTime>("ImportedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("imported_at_utc");
+
+                    b.Property<int>("Nominal")
+                        .HasColumnType("integer")
+                        .HasColumnName("nominal");
+
+                    b.Property<decimal>("Value")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("value");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Date");
+
+                    b.HasIndex("CurrencyId", "Date")
+                        .IsUnique();
+
+                    b.ToTable("currency_rate", (string)null);
+                });
+
+            modelBuilder.Entity("CbrRatesLoader.Data.Entities.CurrencyRate", b =>
+                {
+                    b.HasOne("CbrRatesLoader.Data.Entities.Currency", "Currency")
+                        .WithMany("Rates")
+                        .HasForeignKey("CurrencyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Currency");
+                });
+
+            modelBuilder.Entity("CbrRatesLoader.Data.Entities.Currency", b =>
+                {
+                    b.Navigation("Rates");
+                });
+#pragma warning restore 612, 618
+        }
+    }
+}
