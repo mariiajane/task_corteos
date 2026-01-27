@@ -67,8 +67,6 @@ public sealed class RateImporter
             return;
         }
 
-        await using var tx = await db.Database.BeginTransactionAsync(ct);
-
         var codes = useful.Select(r => r.CharCode).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
 
         var existingCurrencies = await db.Currencies
@@ -139,7 +137,6 @@ public sealed class RateImporter
         }
 
         await db.SaveChangesAsync(ct);
-        await tx.CommitAsync(ct);
 
         _logger.LogInformation("Импорт {Date}: валют={Currencies}, вставлено={Inserted}, обновлено={Updated}.",
             date, useful.Count, inserted, updated);
